@@ -131,15 +131,40 @@ const PRODUCT_QUERY = gql`
       }
       sellingPlanGroups(first: 100) {
         nodes {
+          name
+          appName
+          options {
+            name
+          }
           sellingPlans(first: 100) {
             nodes {
               name
+              id
+              description
             }
           }
         }
       }
       variants(first: 100) {
         nodes {
+          sellingPlanAllocations(first: 100) {
+            nodes {
+              checkoutChargeAmount {
+                amount
+                currencyCode
+              }
+              priceAdjustments {
+                price {
+                  amount
+                  currencyCode
+                }
+              }
+              sellingPlan {
+                id
+                name
+              }
+            }
+          }
           id
           availableForSale
           selectedOptions {

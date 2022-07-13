@@ -1,4 +1,4 @@
-import {useEffect, useCallback, useState, useMemo} from 'react';
+import {useEffect, useCallback, useState, useMemo, useRef} from 'react';
 
 import {
   useProductOptions,
@@ -11,17 +11,27 @@ import {
 
 import {Heading, Text, Button, ProductOptions} from '~/components';
 
+function getFormattedId(graphqlId = '') {
+  return Number(graphqlId.split('/')[4]);
+}
+
 export function ProductForm({data = {}}) {
   const {pathname, search} = useUrl();
+  const variantInput = useRef(null);
   const [params, setParams] = useState(new URLSearchParams(search));
-
-  const {options, setSelectedOption, selectedOptions, selectedVariant} =
-    useProductOptions();
+  const {
+    options,
+    setSelectedOption,
+    selectedOptions,
+    selectedVariant,
+    priceV2: price,
+    variants,
+    sellingPlanGroups,
+  } = useProductOptions();
   const isOutOfStock = !selectedVariant?.availableForSale || false;
   const isOnSale =
     selectedVariant?.priceV2?.amount <
       selectedVariant?.compareAtPriceV2?.amount || false;
-
   useEffect(() => {
     const widgetScript = document.createElement('script');
     widgetScript.setAttribute(
@@ -32,15 +42,16 @@ export function ProductForm({data = {}}) {
   }, []);
 
   const productHashJson = useMemo(() => {
-    if (data.sellingPlanGroups) {
+    if (sellingPlanGroups && sellingPlanGroups.length) {
       return JSON.stringify({
-        ...data,
+        price,
         requires_selling_plan: data.requiresSellingPlan,
-        selling_plan_groups: data.sellingPlanGroups,
+        variants: getVariantsForPayload(variants),
+        selling_plan_groups: getSellingGroupsForPayload(sellingPlanGroups),
       });
     }
     return null;
-  }, [data]);
+  }, [data.requiresSellingPlan, price, sellingPlanGroups, variants]);
 
   useEffect(() => {
     if (params || !search) return;
@@ -71,6 +82,15 @@ export function ProductForm({data = {}}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    variantInput.current.setAttribute(
+      'value',
+      getFormattedId(selectedVariant.id),
+    );
+    var event = new Event('change');
+    variantInput.current.dispatchEvent(event);
+  }, [selectedVariant.id]);
+
   const handleChange = useCallback(
     (name, value) => {
       setSelectedOption(name, value);
@@ -90,8 +110,45 @@ export function ProductForm({data = {}}) {
     [setSelectedOption, params, pathname],
   );
 
+  function getVariantsForPayload(variants = []) {
+    return variants.map(({id, sellingPlanAllocations = [], priceV2 = {}}) => {
+      return {
+        id: getFormattedId(id),
+        price: priceV2.amount * 100,
+        selling_plan_allocations: sellingPlanAllocations?.nodes.map(
+          ({checkoutChargeAmount = {}, sellingPlan = {}}) => {
+            return {
+              price: checkoutChargeAmount.amount * 100,
+              selling_plan_id: getFormattedId(sellingPlan.id),
+            };
+          },
+        ),
+      };
+    });
+  }
+
+  function getSellingGroupsForPayload(sellingPlanGroups = []) {
+    return sellingPlanGroups.map(
+      ({name, options = [], sellingPlans}, index) => {
+        return {
+          id: index,
+          name,
+          options,
+          selling_plans: sellingPlans?.map(({description, id, name}) => {
+            return {
+              name,
+              description,
+              id: getFormattedId(id),
+            };
+          }),
+        };
+      },
+    );
+  }
+
   return (
     <form className="grid gap-10">
+      <input type="hidden" name="id" ref={variantInput} />
       {
         <div className="grid gap-4">
           {options.map(({name, values}) => {
